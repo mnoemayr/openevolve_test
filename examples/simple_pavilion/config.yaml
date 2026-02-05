@@ -1,0 +1,23 @@
+# Evolution settings
+max_iterations: 100
+checkpoint_interval: 10
+parallel_evaluations: 1
+
+# LLM configuration
+llm:
+  api_base: "https://api.openai.com/v1"  # Or your LLM provider #insert api base for haiku or other: https://platform.claude.com/settings/keys
+  models:
+    - name: "Haiku 4.5"
+      weight: 1.0 #what is this?
+  temperature: 0.7 #default 0.7
+  max_tokens: 4000 #default 4000
+  timeout: 120 #default 120
+
+# Database configuration (MAP-Elites algorithm)
+database:
+  population_size: 40
+  num_islands: 5
+  migration_interval: 40
+  feature_dimensions:  # MUST be a list, not an integer
+    - "score"
+    - "complexity"
