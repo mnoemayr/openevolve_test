@@ -42,17 +42,17 @@ def construct_geometry(
 
 def run_geometry():
     """Run the geometry constructor and return triangle area for evaluation."""
-    base_dir = os.path.join("examples", "simple_pavilion")
+    base_dir = os.path.join("examples", "simple_geometry")
     os.makedirs(base_dir, exist_ok=True)
 
     triangle_pts, triangle_edges, triangle_area = construct_geometry()
 
-    path = os.path.join(base_dir, "support_points.csv")
+    path = os.path.join(base_dir, "triangle_pts.csv")
     with open(path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerows(triangle_pts)
 
-    return base_area
+    return triangle_area
 
 
 # EVOLVE-BLOCK-END
