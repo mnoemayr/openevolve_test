@@ -87,22 +87,20 @@ class LLMModelConfig:
         #"""Post-initialization to resolve ${VAR} env var references in api_key""" #was here
         #self.api_key = _resolve_env_var(self.api_key) #was here
 
-        """Set up API key from environment if not provided"""
+        """Set up API key from environment if not provided""" #start from here and replace primary model by name
+        model_name = self.name
+
         if not self.api_key:
             # Try to get API key from environment
-            if self.primary_model.startswith("claude-") or self.primary_model.startswith("claude-") or self.primary_model.startswith(
-                "anthropic/"
-            ):
+            if model_name and (model_name.startswith("claude-") or model_name.startswith("anthropic/")):
                 self.api_key = os.environ.get("ANTHROPIC_API_KEY")
             else:
                 self.api_key = os.environ.get("OPENAI_API_KEY")
 
         # Set default API base based on model type
-        if self.api_base == "https://api.openai.com/v1":
-            if self.primary_model.startswith("claude-") or self.primary_model.startswith(
-                "anthropic/"
-            ):
-                self.api_base = "https://api.anthropic.com/v1"
+        if self.api_base == "https://api.openai.com/v1": #MN: here too?
+            if model_name.startswith("claude-") and (model_name.startswith("claude-") or model_name.startswith("anthropic/")):
+                self.api_base = "https://api.anthropic.com" #MN: removed the /v1
 
 
 @dataclass
@@ -110,7 +108,7 @@ class LLMConfig(LLMModelConfig):
     """Configuration for LLM models"""
 
     # API configuration
-    api_base: str = "https://api.openai.com/v1"
+    api_base: str = "https://api.openai.com/v1" #MN: here too?
 
     # Generation parameters
     system_message: Optional[str] = "system_message"
@@ -517,7 +515,7 @@ def load_config(config_path: Optional[Union[str, Path]] = None) -> Config:
 
         # Use environment variables if available
         api_key = os.environ.get("OPENAI_API_KEY")
-        api_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
+        api_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1") #MN: here too?
 
         config.llm.update_model_params({"api_key": api_key, "api_base": api_base})
 

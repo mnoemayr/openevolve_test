@@ -9,18 +9,20 @@ from typing import Dict, List, Optional, Tuple
 
 from openevolve.llm.base import LLMInterface
 from openevolve.llm.openai import OpenAILLM
-from openevolve.config import LLMModelConfig
+from openevolve.config import LLMModelConfig, LLMConfig #MN: this is also new here, LLMConfig
 from openevolve.llm.anthropic import AnthropicLLM
 
 logger = logging.getLogger(__name__)
 
 
-def create_llm(config: LLMConfig, model: str) -> LLMInterface:
+def create_llm(config: LLMConfig) -> LLMInterface: #MN: here it's create_llm is defined to take two arguments) #MN: exclude - , model: str
     """Create an LLM instance based on the model name"""
+    model = config.name
+
     if model.startswith("claude-") or model.startswith("anthropic/"):
         return AnthropicLLM(config, model=model)
     else:
-        return OpenAILLM(config, model=model)
+        return OpenAILLM(config) #MN: exclude - , model=model) #MN: idk, another bug in the ANTHROPIC Api support --> OpenAILLM takes only one argument as well
 
 
 class LLMEnsemble:
@@ -31,7 +33,7 @@ class LLMEnsemble:
 
         # Initialize models from the configuration
         self.models = [
-            model_cfg.init_client(model_cfg) if model_cfg.init_client else create_llm(model_cfg) #else OpenAILLM(model_cfg)
+            model_cfg.init_client(model_cfg) if model_cfg.init_client else create_llm(model_cfg) #MN: else OpenAILLM(model_cfg) #MN: and here it only takes one argument
             for model_cfg in models_cfg
         ]
 

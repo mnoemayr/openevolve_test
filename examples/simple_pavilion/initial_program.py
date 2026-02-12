@@ -10,15 +10,7 @@ def construct_geometry(
     polygon_radius: float = 0.8,
     num_polygon: int = 3,
 ):
-    """
-    Construct a regular polygon inscribed
-    in a unit circle (radius 1). polygon_radius for the polygon must be <= 1.
-
-    Returns:
-        triangle_pts: List of (x, y, z) triangle vertices.
-        triangle_edges: List of triangle edges (start, end).
-        triangle_area: Area of the triangle.
-    """
+    
     if polygon_radius > 1.0:
         polygon_radius = 1.0  # Clamp to unit circle
 
@@ -41,18 +33,18 @@ def construct_geometry(
 
 
 def run_geometry():
-    """Run the geometry constructor and return triangle area for evaluation."""
-    base_dir = os.path.join("examples", "simple_pavilion")
+    
+    base_dir = os.path.join("examples", "simple_geometry")
     os.makedirs(base_dir, exist_ok=True)
 
     triangle_pts, triangle_edges, triangle_area = construct_geometry()
 
-    path = os.path.join(base_dir, "support_points.csv")
+    path = os.path.join(base_dir, "triangle_pts.csv")
     with open(path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerows(triangle_pts)
 
-    return base_area
+    return triangle_area
 
 
 # EVOLVE-BLOCK-END

@@ -57,8 +57,21 @@ class AnthropicLLM(LLMInterface):
             "messages": formatted_messages,
             "max_tokens": kwargs.get("max_tokens", self.config.max_tokens),
             "temperature": kwargs.get("temperature", self.config.temperature),
-            "top_p": kwargs.get("top_p", self.config.top_p),
+            #"top_p": kwargs.get("top_p", self.config.top_p), #MN: moved this to only include if not None, since Anthropic API doesn't allow None values for these parameters
         }
+
+        # Optional parameters – only include if not None to satisfy Anthropic API #MN: include this not to set parameters to None
+        #max_tokens = kwargs.get("max_tokens", self.config.max_tokens)
+        #if max_tokens is not None:
+        #    params["max_tokens"] = max_tokens
+
+        #temperature = kwargs.get("temperature", self.config.temperature)
+        #if temperature is not None:
+        #    params["temperature"] = temperature
+
+        top_p = kwargs.get("top_p", self.config.top_p)
+        if top_p is not None:
+            params["top_p"] = top_p
 
         # Attempt the API call with retries
         retries = kwargs.get("retries", self.config.retries)
