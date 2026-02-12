@@ -84,8 +84,25 @@ class LLMModelConfig:
     _manual_queue_dir: Optional[str] = None
 
     def __post_init__(self):
-        """Post-initialization to resolve ${VAR} env var references in api_key"""
-        self.api_key = _resolve_env_var(self.api_key)
+        #"""Post-initialization to resolve ${VAR} env var references in api_key""" #was here
+        #self.api_key = _resolve_env_var(self.api_key) #was here
+
+        """Set up API key from environment if not provided"""
+        if not self.api_key:
+            # Try to get API key from environment
+            if self.primary_model.startswith("claude-") or self.primary_model.startswith("claude-") or self.primary_model.startswith(
+                "anthropic/"
+            ):
+                self.api_key = os.environ.get("ANTHROPIC_API_KEY")
+            else:
+                self.api_key = os.environ.get("OPENAI_API_KEY")
+
+        # Set default API base based on model type
+        if self.api_base == "https://api.openai.com/v1":
+            if self.primary_model.startswith("claude-") or self.primary_model.startswith(
+                "anthropic/"
+            ):
+                self.api_base = "https://api.anthropic.com/v1"
 
 
 @dataclass

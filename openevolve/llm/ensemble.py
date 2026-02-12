@@ -10,8 +10,17 @@ from typing import Dict, List, Optional, Tuple
 from openevolve.llm.base import LLMInterface
 from openevolve.llm.openai import OpenAILLM
 from openevolve.config import LLMModelConfig
+from openevolve.llm.anthropic import AnthropicLLM
 
 logger = logging.getLogger(__name__)
+
+
+def create_llm(config: LLMConfig, model: str) -> LLMInterface:
+    """Create an LLM instance based on the model name"""
+    if model.startswith("claude-") or model.startswith("anthropic/"):
+        return AnthropicLLM(config, model=model)
+    else:
+        return OpenAILLM(config, model=model)
 
 
 class LLMEnsemble:
@@ -22,7 +31,7 @@ class LLMEnsemble:
 
         # Initialize models from the configuration
         self.models = [
-            model_cfg.init_client(model_cfg) if model_cfg.init_client else OpenAILLM(model_cfg)
+            model_cfg.init_client(model_cfg) if model_cfg.init_client else create_llm(model_cfg) #else OpenAILLM(model_cfg)
             for model_cfg in models_cfg
         ]
 

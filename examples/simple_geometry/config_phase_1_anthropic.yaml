@@ -9,7 +9,7 @@ llm:
   primary_model_weight: 0.8
   secondary_model: "claude-opus-4-5-20251101"
   secondary_model_weight: 0.2
-  api_base: "https://api.anthropic.com/v1"
+  api_base: "https://api.anthropic.com"
   api_key: "${ANTHROPIC_API_KEY}"
   temperature: 0.7
   max_tokens: 8192
