@@ -333,6 +333,7 @@ class OpenEvolve:
                 self.database,
                 self.evolution_tracer,
                 file_suffix=self.config.file_suffix,
+                output_dir=self.output_dir, #MN: write CSV per iteration
             )
 
             # Set up signal handlers for graceful shutdown

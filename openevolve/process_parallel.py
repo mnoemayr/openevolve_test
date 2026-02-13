@@ -5,6 +5,9 @@ Process-based parallel controller for true parallelism
 import asyncio
 import logging
 import multiprocessing as mp
+import os #MN new
+import subprocess #MN new
+import sys #MN new
 import pickle
 import signal
 import time
@@ -342,12 +345,14 @@ class ProcessParallelController:
         database: ProgramDatabase,
         evolution_tracer=None,
         file_suffix: str = ".py",
+        output_dir: Optional[str] = None, #MN: save csv per iteration
     ):
         self.config = config
         self.evaluation_file = evaluation_file
         self.database = database
         self.evolution_tracer = evolution_tracer
         self.file_suffix = file_suffix
+        self.output_dir = output_dir #MN: save csv per iteration
 
         self.executor: Optional[ProcessPoolExecutor] = None
         self.shutdown_event = mp.Event()
@@ -468,6 +473,39 @@ class ProcessParallelController:
                 snapshot["artifacts"][pid] = artifacts
 
         return snapshot
+    
+    def _save_iteration_output( #MN: save csv per iteration
+            self, iteration: int, program: Program
+    ) -> None:
+        """
+        Save iteration output by running the program. This writes any side effects
+        (e.g. CSV from run_geometry) to output_dir/iterations/iter_{N}/.
+        """
+        try:
+            iter_dir = os.path.join(
+                self.output_dir, "iterations", f"iter_{iteration:06d}"
+            )
+            os.makedirs(iter_dir, exist_ok=True)
+
+            program_path = os.path.join(iter_dir, f"program{self.file_suffix}")
+            with open(program_path, "w") as f:
+                f.write(program.code)
+
+            # Run the program so it executes run_geometry() and writes the CSV
+            proc = subprocess.run(
+                [sys.executable, program_path],
+                cwd=iter_dir,
+                capture_output=True,
+                timeout=60,
+            )
+            if proc.returncode != 0 and proc.stderr:
+                logger.debug(
+                    f"Iteration {iteration} output run stderr: {proc.stderr.decode()}"
+                )
+        except Exception as e:
+            logger.warning(
+                f"Could not save iteration {iteration} output: {e}"
+            )
 
     async def run_evolution(
         self,
@@ -609,6 +647,12 @@ class ProcessParallelController:
                             program_id=child_program.id,
                             prompt=result.prompt,
                             responses=[result.llm_response] if result.llm_response else [],
+                        )
+
+                    #MN: Save iteration output (e.g. CSV from run_geometry) when output_dir is set
+                    if self.output_dir:
+                        self._save_iteration_output(
+                            completed_iteration, child_program
                         )
 
                     # Island management
