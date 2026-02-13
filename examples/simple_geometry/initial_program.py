@@ -41,18 +41,21 @@ def construct_geometry(
 
 
 def run_geometry():
-    """Run the geometry constructor and return triangle area for evaluation."""
-    base_dir = os.path.join("examples", "simple_geometry")
+    """Run the geometry constructor, write CSV and return (trianle_pts, triangle_edges, triangle_area)."""
+    base_dir = os.path.dirname(os.path.abspath(__file__)) #MN: abspath
     os.makedirs(base_dir, exist_ok=True)
 
     triangle_pts, triangle_edges, triangle_area = construct_geometry()
 
     path = os.path.join(base_dir, "triangle_pts.csv")
     with open(path, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerows(triangle_pts)
+        csv.writer(f).writerows(triangle_pts)
+    print(f"csv writen to", {base_dir})
 
-    return triangle_area
-
+    return triangle_area, triangle_edges, triangle_pts
 
 # EVOLVE-BLOCK-END
+
+if __name__ == "__main__":
+    run_geometry()
+        

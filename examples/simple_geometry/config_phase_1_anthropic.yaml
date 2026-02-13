@@ -1,6 +1,6 @@
 # Configuration for simple geometry
 max_iterations: 100 # Increased iterations
-checkpoint_interval: 10
+checkpoint_interval: 1 #MN: was 10
 log_level: "INFO"
 
 # LLM configuration

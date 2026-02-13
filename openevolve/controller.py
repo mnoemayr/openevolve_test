@@ -466,7 +466,9 @@ class OpenEvolve:
             # Save the best program at this checkpoint
             best_program_path = os.path.join(checkpoint_path, f"best_program{self.file_extension}")
             with open(best_program_path, "w") as f:
-                f.write(best_program.code)
+                f.write(best_program.code) 
+
+            #MN: run the best_program here?!
 
             # Save metrics
             best_program_info_path = os.path.join(checkpoint_path, "best_program_info.json")
