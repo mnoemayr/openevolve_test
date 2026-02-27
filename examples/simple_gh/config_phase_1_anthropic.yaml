@@ -1,4 +1,4 @@
-# Configuration for simple geometry
+# Configuration for simple gh
 max_iterations: 100 # Increased iterations
 checkpoint_interval: 1 #MN: was 10
 log_level: "INFO"
