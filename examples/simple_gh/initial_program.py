@@ -4,6 +4,7 @@
 import math
 import csv
 import os
+import time
 
 
 def construct_geometry(
@@ -47,12 +48,13 @@ def run_geometry():
 
     triangle_pts, triangle_edges, triangle_area = construct_geometry()
 
-    path = os.path.join(base_dir, "triangle_pts.csv")
+    path = os.path.join(base_dir, "triangle_pts.csv") 
+    #path = os.path.join(base_dir, f"triangle_pts_{time.time():.0f}.csv") #MN: path + identifier
     with open(path, "w", newline="") as f:
         csv.writer(f).writerows(triangle_pts)
-    print(f"csv writen to", {base_dir})
+    print(f"csv written to {base_dir}")
 
-    return triangle_area, triangle_edges, triangle_pts
+    return triangle_area# triangle_edges, triangle_pts
 
 # EVOLVE-BLOCK-END
 
