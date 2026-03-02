@@ -43,6 +43,7 @@ def construct_geometry(
 
     return triangle_pts, triangle_edges, triangle_area
 
+# EVOLVE-BLOCK-END #MN is def run_geometry() in the correct spot? But I do not want to change any of it during the iterations
 
 def run_geometry():
     """Run the geometry constructor, write CSV and return (trianle_pts, triangle_edges, triangle_area)."""
@@ -58,10 +59,11 @@ def run_geometry():
     with open(OUTPUT_PATH, "w", newline="") as f:
         csv.writer(f).writerows(triangle_pts)
     print(f"csv written to {OUTPUT_PATH}")
+    print("ABS PATH:", os.path.abspath(OUTPUT_PATH))
+    print("EXISTS:", os.path.exists(OUTPUT_PATH))
+    print("SIZE:", os.path.getsize(OUTPUT_PATH) if os.path.exists(OUTPUT_PATH) else 0)
 
     return triangle_area# triangle_edges, triangle_pts
-
-# EVOLVE-BLOCK-END
 
 if __name__ == "__main__":
     run_geometry()

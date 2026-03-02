@@ -1,5 +1,7 @@
 """
 Evaluator for simple geometry example with triangle area metric.
+
+MN: this version also supports reading an externally-computed fitness value from a CSV file (e.g. written by Grasshopper) located next to the program.
 """
 
 import os
@@ -9,10 +11,54 @@ import sys
 import tempfile
 import time
 import traceback
+import pandas as pd
+import csv
 
 
 class TimeoutError(Exception):
     pass
+
+#MN: this is the CSV external fitness reader
+def wait_for_external_fitness(
+    program_path,
+    fitness_filename: str = "fitness.csv",
+    timeout_seconds: int = 30,
+    poll_interval: float = 0.5,
+):
+    """
+    Wait for an external process (e.g. Grasshopper) to write a fitness CSV.
+
+    The CSV is expected to live in the same directory as the program file and
+    contain the primary fitness value in the first cell of the first row.
+
+    Returns:
+        float fitness value if the file is found and parsed, or None if timeout/parse failure.
+    """
+    program_dir = os.path.dirname(os.path.abspath(program_path))
+    fitness_path = os.path.join(program_dir, fitness_filename)
+
+    start = time.time()
+    while not os.path.exists(fitness_path):
+        if time.time() - start > timeout_seconds:
+            print(f"Timed out waiting for external fitness file: {fitness_path}")
+            return None
+        time.sleep(poll_interval)
+
+    try:
+        with open(fitness_path, "r", newline="") as f:
+            reader = csv.reader(f)
+            first_row = next(reader, None)
+
+        if not first_row:
+            print(f"Fitness file {fitness_path} is empty")
+            return None
+
+        fitness_str = first_row[0]
+        fitness_val = float(fitness_str)
+        return fitness_val
+    except Exception as e:
+        print(f"Failed to read external fitness from {fitness_path}: {e}")
+        return None
 
 
 def validate_geometry(triangle_area):
@@ -150,6 +196,14 @@ def evaluate(program_path):
 
         triangle_area = run_with_timeout(program_path, timeout_seconds=600)
 
+        #MN Optional: wait for the external fitness value (e.g. from Grasshopper)
+        external_fitness = wait_for_external_fitness(
+            program_path,
+            fitness_filename="fitness.csv", #MN: is this next to this program file or in the IO folder?
+            timeout_seconds=30,
+            poll_interval=0.5,
+        )
+
         eval_time = time.time() - start_time
 
         if not validate_geometry(triangle_area):
@@ -165,17 +219,29 @@ def evaluate(program_path):
         triangle_area_val = float(triangle_area)
         target_ratio = triangle_area_val / TARGET_VALUE if valid else 0.0
         validity = 1.0 if valid else 0.0
-        combined_score = target_ratio * validity
+
+        #MN: if an external fitness value is available (eg. from Grasshopper),
+        # use this as the main optimization target.
+        # otherwise, fall back to the internal triangle-area-based score.
+        if external_fitness is not None:
+            combined_score = float(external_fitness)
+        else:
+            combined_score = target_ratio * validity
+
+        #combined_score = target_ratio * validity
 
         print(
             f"Evaluation: valid={valid}, triangle_area={triangle_area_val:.6f}, "
-            f"target={TARGET_VALUE}, ratio={target_ratio:.6f}, time={eval_time:.2f}s"
+            #f"target={TARGET_VALUE}, ratio={target_ratio:.6f}, time={eval_time:.2f}s"
+            f"target={TARGET_VALUE}, ratio={target_ratio:.6f}, " #MN new
+            f"external_fitness={external_fitness}, eval_time={eval_time:.2f}s" #MN new
         )
 
         return {
             "triangle_area": triangle_area_val,
             "target_ratio": target_ratio,
             "validity": validity,
+            "external_fitness": float(external_fitness) if external_fitness is not None else 0.0, #MN new
             "eval_time": eval_time,
             "combined_score": combined_score,
         }
