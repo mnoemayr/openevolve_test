@@ -1,11 +1,14 @@
-# EVOLVE-BLOCK-START
-"""Initial program for a triangle inside a unit cirle"""
-
 import math
 import csv
 import os
 import time
 
+BASE_DIR = os.path.dirname(__file__)
+IO_DIR = os.path.join(BASE_DIR, "io")
+INPUT_PATH = os.path.join(IO_DIR, "input.csv")
+
+# EVOLVE-BLOCK-START
+"""Initial program for a triangle inside a unit cirle"""
 
 def construct_geometry(
     polygon_radius: float = 0.8,
@@ -43,16 +46,18 @@ def construct_geometry(
 
 def run_geometry():
     """Run the geometry constructor, write CSV and return (trianle_pts, triangle_edges, triangle_area)."""
-    base_dir = os.path.dirname(os.path.abspath(__file__)) #MN: abspath
-    os.makedirs(base_dir, exist_ok=True)
+    #base_dir = os.path.dirname(os.path.abspath(__file__)) #MN: abspath
+    os.makedirs(BASE_DIR, exist_ok=True)
+    IO_DIR = os.path.join(BASE_DIR, "io")
+    OUTPUT_PATH = os.path.join(IO_DIR, "input.csv")
 
     triangle_pts, triangle_edges, triangle_area = construct_geometry()
 
-    path = os.path.join(base_dir, "triangle_pts.csv") 
-    #path = os.path.join(base_dir, f"triangle_pts_{time.time():.0f}.csv") #MN: path + identifier
-    with open(path, "w", newline="") as f:
+    #path = os.path.join(base_dir, "triangle_pts.csv") 
+    
+    with open(OUTPUT_PATH, "w", newline="") as f:
         csv.writer(f).writerows(triangle_pts)
-    print(f"csv written to {base_dir}")
+    print(f"csv written to {OUTPUT_PATH}")
 
     return triangle_area# triangle_edges, triangle_pts
 
