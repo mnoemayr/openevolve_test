@@ -2,10 +2,12 @@ import math
 import csv
 import os
 import time
+import pandas as pd
 
-BASE_DIR = os.path.dirname(__file__)
-IO_DIR = os.path.join(BASE_DIR, "io")
-INPUT_PATH = os.path.join(IO_DIR, "input.csv")
+#MN: Base directory for input/output CSVs next to the init_program.py and evaluator.py files, not in a separate IO folder
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) #folder containing this script 
+INPUT_PATH = os.path.join(BASE_DIR, "input.csv")
+
 
 # EVOLVE-BLOCK-START
 """Initial program for a triangle inside a unit cirle"""
@@ -47,23 +49,18 @@ def construct_geometry(
 
 def run_geometry():
     """Run the geometry constructor, write CSV and return (trianle_pts, triangle_edges, triangle_area)."""
-    #base_dir = os.path.dirname(os.path.abspath(__file__)) #MN: abspath
-    os.makedirs(BASE_DIR, exist_ok=True)
-    IO_DIR = os.path.join(BASE_DIR, "io")
-    OUTPUT_PATH = os.path.join(IO_DIR, "input.csv")
+    os.makedirs(BASE_DIR, exist_ok=True) # Ensure the base directory exists for the CSV output
 
     triangle_pts, triangle_edges, triangle_area = construct_geometry()
-
-    #path = os.path.join(base_dir, "triangle_pts.csv") 
     
-    with open(OUTPUT_PATH, "w", newline="") as f:
+    with open(INPUT_PATH, "w", newline="") as f:
         csv.writer(f).writerows(triangle_pts)
-    print(f"csv written to {OUTPUT_PATH}")
-    print("ABS PATH:", os.path.abspath(OUTPUT_PATH))
-    print("EXISTS:", os.path.exists(OUTPUT_PATH))
-    print("SIZE:", os.path.getsize(OUTPUT_PATH) if os.path.exists(OUTPUT_PATH) else 0)
+    print(f"csv written to {INPUT_PATH}")
+    print("ABS PATH:", os.path.abspath(INPUT_PATH))
+    print("EXISTS:", os.path.exists(INPUT_PATH))
+    print("SIZE:", os.path.getsize(INPUT_PATH) if os.path.exists(INPUT_PATH) else 0)
 
-    return triangle_area# triangle_edges, triangle_pts
+    return triangle_area
 
 if __name__ == "__main__":
     run_geometry()

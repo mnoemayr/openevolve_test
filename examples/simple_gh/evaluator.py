@@ -11,9 +11,7 @@ import sys
 import tempfile
 import time
 import traceback
-import pandas as pd
 import csv
-
 
 class TimeoutError(Exception):
     pass
@@ -197,9 +195,31 @@ def evaluate(program_path):
         triangle_area = run_with_timeout(program_path, timeout_seconds=600)
 
         #MN Optional: wait for the external fitness value (e.g. from Grasshopper)
+
+        # Fake Grasshopper computation here:
+        # ------------------------------------------------------------
+        # Fake "Grasshopper" computation: write a fitness.csv file
+        # next to the program, then use the existing waiting mechanism
+        # to read it back in.
+        # ------------------------------------------------------------
+        # Compute fitness_value somehow
+        fitness_value = float(triangle_area) if triangle_area is not None else 0.0
+
+        # Fake GH writes fitness.csv
+        program_dir = os.path.dirname(os.path.abspath(program_path))
+        fitness_path = os.path.join(program_dir, "fitness.csv")
+
+        with open(fitness_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([fitness_value])
+
+        print("Fake GH wrote fitness to:", fitness_path)
+
+        # Now use your waiting mechanism
+
         external_fitness = wait_for_external_fitness(
             program_path,
-            fitness_filename="fitness.csv", #MN: is this next to this program file or in the IO folder?
+            fitness_filename="fitness.csv", #MN: this is next to the file and not in the IO folder
             timeout_seconds=30,
             poll_interval=0.5,
         )
@@ -298,3 +318,11 @@ def evaluate_stage2(program_path):
     Second stage evaluation - full evaluation.
     """
     return evaluate(program_path)
+
+if __name__ == "__main__":
+    #MN: point to the same directory
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    program_path = os.path.join(this_dir, "initial_program.py") 
+
+    results = evaluate(program_path)
+    print("Final evaluation results:", results)
