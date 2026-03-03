@@ -1,9 +1,10 @@
 """
-Evaluator for simple geometry example with triangle area metric.
+Evaluator for a simple FEA example using the PyNiteFEA library.
 
-MN: this version is for implementing the PyNiteFEA libary into the OpenEvolve loop."
+MN: this version is for implementing the PyNiteFEA library into the OpenEvolve loop."
 """
 
+import importlib.util
 import os
 import pickle
 import subprocess
@@ -12,269 +13,352 @@ import tempfile
 import time
 import traceback
 import csv
+from Pynite import FEModel3D
 
-class TimeoutError(Exception):
-    pass
-
-#MN: this is the CSV external fitness reader
-def wait_for_external_fitness(
-    program_path,
-    fitness_filename: str = "fitness.csv",
-    timeout_seconds: int = 30,
-    poll_interval: float = 0.5,
-):
+def _read_nodes_from_csv(program_path, filename="nodes.csv"):
     """
-    Wait for an external process (e.g. Grasshopper) to write a fitness CSV.
-
-    The CSV is expected to live in the same directory as the program file and
-    contain the primary fitness value in the first cell of the first row.
-
-    Returns:
-        float fitness value if the file is found and parsed, or None if timeout/parse failure.
+    Nodes are assigned IDs N1, N2, ... in file order.
     """
     program_dir = os.path.dirname(os.path.abspath(program_path))
-    fitness_path = os.path.join(program_dir, fitness_filename)
 
-    start = time.time()
-    while not os.path.exists(fitness_path):
-        if time.time() - start > timeout_seconds:
-            print(f"Timed out waiting for external fitness file: {fitness_path}")
-            return None
-        time.sleep(poll_interval)
+    candidate_paths = [
+        os.path.join(program_dir, filename),
+        os.path.join(program_dir, "io", filename),
+        os.path.join(program_dir, "input.csv"),
+        os.path.join(program_dir, "io", "input.csv"),
+    ]
 
+    csv_path = None
+    for path in candidate_paths:
+        if os.path.exists(path):
+            csv_path = path
+            break
+    if csv_path is None:
+        return {}
+    
+    nodes = {}
     try:
-        with open(fitness_path, "r", newline="") as f:
+        with open(csv_path, "r", newline="") as f:
             reader = csv.reader(f)
-            first_row = next(reader, None)
-
-        if not first_row:
-            print(f"Fitness file {fitness_path} is empty")
-            return None
-
-        fitness_str = first_row[0]
-        fitness_val = float(fitness_str)
-        return fitness_val
+            for idx, row in enumerate[list[str]](reader, start=1):
+                if not row:
+                    continue
+                try:
+                    if len(row) >= 4:
+                        node_id = str(row[0]).strip()
+                        x, y, z = map(float, row[1:4])
+                    else:
+                        node_id = f"N{idx}"
+                        x, y, z = map(float, row[:3])
+                except Exception:
+                    continue
+                if not node_id:
+                    node_id = f"N{idx}"
+                nodes[node_id] = (x, y, z)
     except Exception as e:
-        print(f"Failed to read external fitness from {fitness_path}: {e}")
-        return None
+        print(f"Failed to read nodes from CSV '{csv_path}': {e}")
+        return {}
+    
+    print(f"Loaded {len(nodes)} nodes from CSV:{csv_path}")
+    return nodes
 
-
-def validate_geometry(triangle_area):
+def _write_nodes_to_csv(program_path, nodes, filename="nodes.csv"):
     """
-    Validate that triangle_area is a valid metric value.
+    Write node coordinates to a CSV file next to the program.
 
-    Args:
-        triangle_area: Area of the polygon.
-
-    Returns:
-        True if valid, False otherwise.
+    This mirrors the geometry being used so external tools
+    (e.g. Grasshopper) can read it.
     """
-    if triangle_area is None:
-        print("triangle_area is None")
-        return False
+    program_dir = os.path.dirname(os.path.abspath(program_path))
+    csv_path = os.path.join(program_dir, filename)
+
     try:
-        val = float(triangle_area)
-    except (TypeError, ValueError):
-        print(f"triangle_area is not a valid number: {triangle_area}")
-        return False
-    if val != val:  # NaN check
-        print("triangle_area is NaN")
-        return False
-    if val <= 0:
-        print(f"triangle_area must be positive, got {val}")
-        return False
-    if val == float("inf") or val == float("-inf"):
-        print("triangle_area is infinite")
-        return False
-    return True
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            for node_id in sorted(nodes.keys()):
+                x, y, z = nodes[node_id]
+                writer.writerow([x, y, z])
+        print(f"Wrote {len(nodes)} nodes to CSV: {csv_path}")
+    except Exception as e:
+        print(f"Failed to write nodes to CSV '{csv_path}': {e}")
 
-
-def run_with_timeout(program_path, timeout_seconds=20):
+def extract_geometry(program_path):
     """
-    Run the program in a separate process with timeout.
+    Load the candidate program and extract FEA geometry.
 
-    Args:
-        program_path: Path to the program file
-        timeout_seconds: Maximum execution time in seconds
+    There are two ways to provide geometry:
 
-    Returns:
-        triangle_area from run_geometry()
+    1) CSV-based (preferred for GH workflows)
+       - A CSV file with node coordinates is loaded if present:
+         * nodes.csv
+         * io/nodes.csv
+         * input.csv
+         * io/input.csv
+       - Elements, supports, and loads are then generated procedurally
+         from these nodes:
+           * Elements connect N1-N2, N2-N3, ..., forming a chain
+           * N1 is fully fixed
+           * A vertical load FY is applied at the last node
+
+    2) Program-based
+       - The evolved program defines either:
+           * get_fea_geometry() -> (nodes, elements, supports, loads)
+             or
+           * extract_geometry() -> (nodes, elements, supports, loads)
+       - In this case we also mirror the nodes out to nodes.csv.
+
+    Geometry format (for program-based path):
+    - nodes: dict[node_id] = (x, y, z)
+    - elements: list of dicts with at least:
+        {
+            "name": "M1",
+            "i": "N1",
+            "j": "N2",
+            "material": "Steel",
+            "section": "MySection",
+        }
+    - supports: list of dicts like:
+        {"node": "N1", "DX": True, "DY": True, "DZ": True, "RX": False, "RY": False, "RZ": False}
+    - loads: list of dicts like:
+        {"node": "N2", "direction": "FY", "value": -10.0, "case": "D"}
     """
     program_path = os.path.abspath(program_path)
     program_dir = os.path.dirname(program_path)
 
-    with tempfile.NamedTemporaryFile(suffix=".py", delete=False) as temp_file:
-        script = f'''
-import sys
-import os
-import pickle
-import traceback
+    # 1) CSV-based geometry (preferred)
+    nodes = _read_nodes_from_csv(program_path, filename="nodes.csv")
+    if nodes:
+        # Create a simple chain of members along the nodes
+        node_ids = sorted(nodes.keys(), key=lambda nid: int(nid[1:]) if nid[1:].isdigit() else nid)
+        elements = []
+        for i in range(len(node_ids) - 1):
+            i_id = node_ids[i]
+            j_id = node_ids[i + 1]
+            elements.append(
+                {
+                    "name": f"M{i+1}",
+                    "i": i_id,
+                    "j": j_id,
+                    "material": "Steel",
+                    "section": "GenericSection",
+                }
+            )
 
-sys.path.insert(0, {repr(program_dir)})
+        supports = []
+        if node_ids:
+            # Fix the first node
+            supports.append( #UX = fixed, UY = fixed
+                {
+                    "node": node_ids[0],
+                    "DX": True,
+                    "DY": True,
+                    "DZ": True,
+                    "RX": True,
+                    "RY": True,
+                    "RZ": True,
+                }
+            )
+            supports.append( #UY = fixed, UX = free
+                {
+                    "node": node_ids[1],
+                    "DX": True,
+                    "DY": True,
+                    "DZ": False,
+                    "RX": False,
+                    "RY": False,
+                    "RZ": False,
+                }
+            )
+        print("supports: ",supports)
 
-try:
-    spec = __import__("importlib.util").util.spec_from_file_location(
-        "program", {repr(program_path)}
-    )
-    program = __import__("importlib.util").util.module_from_spec(spec)
-    spec.loader.exec_module(program)
+        loads = []
+        if node_ids:
+            # Apply a vertical load at the last node
+            loads.append(
+                {
+                    "node": node_ids[-1],
+                    "direction": "FZ",
+                    "value": -100000,
+                    "case": "D",
+                }
+            )
+        print("loads: ",loads)
 
-    triangle_area = program.run_geometry()
+        return nodes, elements, supports, loads
 
-    with open({repr(temp_file.name + ".results")}, "wb") as f:
-        pickle.dump({{"triangle_area": triangle_area}}, f)
+    # 2) Program-based geometry (fallback)
+    spec = importlib.util.spec_from_file_location("candidate_program", program_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
 
-except Exception as e:
-    traceback.print_exc()
-    with open({repr(temp_file.name + ".results")}, "wb") as f:
-        pickle.dump({{"error": str(e)}}, f)
-'''
-        temp_file.write(script.encode())
-        temp_file_path = temp_file.name
-
-    results_path = temp_file_path + ".results"
-
-    try:
-        process = subprocess.Popen(
-            [sys.executable, temp_file_path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=program_dir,
+    if hasattr(module, "get_fea_geometry"):
+        result = module.get_fea_geometry()
+    elif hasattr(module, "extract_geometry"):
+        result = module.extract_geometry()
+    else:
+        raise AttributeError(
+            "Program must define get_fea_geometry() or extract_geometry() "
+            "returning (nodes, elements, supports, loads), "
+            "or provide a nodes.csv / input.csv file."
         )
 
-        try:
-            stdout, stderr = process.communicate(timeout=timeout_seconds)
-            exit_code = process.returncode
+    # Allow dict-style return for convenience
+    if isinstance(result, dict):
+        nodes = result.get("nodes", {})
+        elements = result.get("elements", [])
+        supports = result.get("supports", [])
+        loads = result.get("loads", [])
+    else:
+        # Tuple / list style return
+        if len(result) == 2:
+            nodes, elements = result
+            supports, loads = [], []
+        elif len(result) == 4:
+            nodes, elements, supports, loads = result
+        else:
+            raise ValueError(
+                "Geometry function must return (nodes, elements) or "
+                "(nodes, elements, supports, loads)."
+            )
 
-            print(stdout.decode())
-            if stderr:
-                print(stderr.decode())
+    # Mirror nodes out to CSV so external tools can use them
+    if nodes:
+        _write_nodes_to_csv(program_path, nodes, filename="nodes.csv")
 
-            if exit_code != 0:
-                raise RuntimeError(f"Process exited with code {exit_code}")
+    return nodes, elements, supports, loads
 
-            if os.path.exists(results_path):
-                with open(results_path, "rb") as f:
-                    results = pickle.load(f)
+def build_pynite_model(nodes, elements, supports=None, loads=None):
+    """
+    Build a PyNite FEModel3D instance from the provided geometry.
+    """
+    model = FEModel3D()
 
-                if "error" in results:
-                    raise RuntimeError(f"Program execution failed: {results['error']}")
+    # Add nodes
+    for node_id, coords in nodes.items():
+        x, y, z = coords
+        model.add_node(str(node_id), float(x), float(y), float(z))
 
-                return results["triangle_area"]
-            else:
-                raise RuntimeError("Results file not found")
+    # Define default material/section if user did not already
+    # (Users can choose to call add_material/add_section in their geometry function instead.)
+    if hasattr(model, "add_material"):
+        # Simple generic material
+        E = 29000.0
+        G = 11200.0
+        nu = 0.3
+        rho = 2.836e-4
+        model.add_material("Steel", E, G, nu, rho)
 
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
-            raise TimeoutError(f"Process timed out after {timeout_seconds} seconds")
+    if hasattr(model, "add_section"):
+        # Simple generic section
+        A = 20.0
+        Iy = 100.0
+        Iz = 150.0
+        J = 250.0
+        model.add_section("GenericSection", A, Iy, Iz, J)
 
-    finally:
-        if os.path.exists(temp_file_path):
-            os.unlink(temp_file_path)
-        if os.path.exists(results_path):
-            os.unlink(results_path)
+    # Add elements (members)
+    for elem in elements:
+        name = str(elem.get("name"))
+        i_node = str(elem.get("i"))
+        j_node = str(elem.get("j"))
+        material = str(elem.get("material", "Steel"))
+        section = str(elem.get("section", "GenericSection"))
+        model.add_member(name, i_node, j_node, material, section)
 
+    # Supports
+    supports = supports or []
+    for sup in supports:
+        node = str(sup.get("node"))
+        if not node:
+            continue
+        dx = bool(sup.get("DX", False))
+        dy = bool(sup.get("DY", False))
+        dz = bool(sup.get("DZ", False))
+        rx = bool(sup.get("RX", False))
+        ry = bool(sup.get("RY", False))
+        rz = bool(sup.get("RZ", False))
+        model.def_support(node, dx, dy, dz, rx, ry, rz)
+
+    # Nodal loads (simple case)
+    loads = loads or []
+    for load in loads:
+        node = str(load.get("node"))
+        direction = str(load.get("direction", "FY"))
+        value = float(load.get("value", 0.0))
+        case = str(load.get("case", "D"))
+        if not node:
+            continue
+        if hasattr(model, "add_node_load"):
+            model.add_node_load(node, direction, value, case)
+
+    return model
 
 def evaluate(program_path):
     """
-    Evaluate the program by running it once and checking the triangle area.
+    Evaluate a candidate program by:
+    1. Extracting geometry.
+    2. Building a PyNite model.
+    3. Running an FEA analysis.
+    4. Computing a fitness based on maximum nodal displacement.
 
-    Args:
-        program_path: Path to the program file
-
-    Returns:
-        Dictionary of metrics
+    Fitness convention:
+    - fitness = -max_displacement
+    - Higher fitness is better (smaller displacement -> less negative).
     """
-    # Max area for regular n-gon in unit circle: hexagon (n=6) with r=1 ≈ 2.598
-    TARGET_VALUE = 1.29903811
+    start_time = time.time()
 
     try:
-        start_time = time.time()
+        nodes, elements, supports, loads = extract_geometry(program_path)
+        model = build_pynite_model(nodes, elements, supports, loads)
 
-        triangle_area = run_with_timeout(program_path, timeout_seconds=600)
+        # Run the analysis
+        model.analyze()
 
-        #MN Optional: wait for the external fitness value (e.g. from Grasshopper)
+        # Collect maximum absolute displacement over all nodes and load combos
+        max_disp = 0.0
+        try:
+            for node in model.nodes.values():
+                # PyNite stores displacements per load combo in dicts like node.DX, node.DY, node.DZ
+                for attr_name in ("DX", "DY", "DZ"):
+                    disp_attr = getattr(node, attr_name, None)
+                    if isinstance(disp_attr, dict):
+                        for val in disp_attr.values():
+                            try:
+                                mag = abs(float(val))
+                                if mag > max_disp:
+                                    max_disp = mag
+                            except Exception:
+                                continue
+        except Exception as disp_err:
+            print(f"Warning: failed to extract displacements cleanly: {disp_err}")
 
-        # Fake Grasshopper computation here:
-        # ------------------------------------------------------------
-        # Fake "Grasshopper" computation: write a fitness.csv file
-        # next to the program, then use the existing waiting mechanism
-        # to read it back in.
-        # ------------------------------------------------------------
-        # Compute fitness_value somehow
-        fitness_value = float(triangle_area) if triangle_area is not None else 0.0
-
-        # Fake GH writes fitness.csv
-        program_dir = os.path.dirname(os.path.abspath(program_path))
-        fitness_path = os.path.join(program_dir, "fitness.csv")
-
-        with open(fitness_path, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow([fitness_value])
-
-        print("Fake GH wrote fitness to:", fitness_path)
-
-        # Now use your waiting mechanism
-
-        external_fitness = wait_for_external_fitness(
-            program_path,
-            fitness_filename="fitness.csv", #MN: this is next to the file and not in the IO folder
-            timeout_seconds=30,
-            poll_interval=0.5,
-        )
-
+        fitness = -float(max_disp)
         eval_time = time.time() - start_time
 
-        if not validate_geometry(triangle_area):
-            return {
-                "triangle_area": 0.0,
-                "target_ratio": 0.0,
-                "validity": 0.0,
-                "eval_time": float(eval_time),
-                "combined_score": 0.0,
-            }
-
-        valid = True
-        triangle_area_val = float(triangle_area)
-        target_ratio = triangle_area_val / TARGET_VALUE if valid else 0.0
-        validity = 1.0 if valid else 0.0
-
-        #MN: if an external fitness value is available (eg. from Grasshopper),
-        # use this as the main optimization target.
-        # otherwise, fall back to the internal triangle-area-based score.
-        if external_fitness is not None:
-            combined_score = float(external_fitness)
-        else:
-            combined_score = target_ratio * validity
-
-        #combined_score = target_ratio * validity
-
         print(
-            f"Evaluation: valid={valid}, triangle_area={triangle_area_val:.6f}, "
-            #f"target={TARGET_VALUE}, ratio={target_ratio:.6f}, time={eval_time:.2f}s"
-            f"target={TARGET_VALUE}, ratio={target_ratio:.6f}, " #MN new
-            f"external_fitness={external_fitness}, eval_time={eval_time:.2f}s" #MN new
+            f"FEA evaluation: max_disp={max_disp:.6e}, fitness={fitness:.6e}, "
+            f"time={eval_time:.2f}s"
         )
 
         return {
-            "triangle_area": triangle_area_val,
-            "target_ratio": target_ratio,
-            "validity": validity,
-            "external_fitness": float(external_fitness) if external_fitness is not None else 0.0, #MN new
-            "eval_time": eval_time,
-            "combined_score": combined_score,
+            "max_displacement": float(max_disp),
+            "fitness": float(fitness),
+            "validity": 1.0,
+            "eval_time": float(eval_time),
+            "combined_score": float(fitness),
         }
 
     except Exception as e:
-        print(f"Evaluation failed completely: {str(e)}")
+        print(f"FEA evaluation failed completely: {e}")
         traceback.print_exc()
         return {
-            "triangle_area": 0.0,
-            "target_ratio": 0.0,
+            "max_displacement": 0.0,
+            "fitness": -1e9,  # very poor score
             "validity": 0.0,
             "eval_time": 0.0,
-            "combined_score": 0.0,
+            "combined_score": -1e9,
+            "error": str(e),
         }
 
 
@@ -282,35 +366,7 @@ def evaluate_stage1(program_path):
     """
     First stage evaluation - quick validation check.
     """
-    try:
-        try:
-            triangle_area = run_with_timeout(program_path, timeout_seconds=600)
-
-            valid = validate_geometry(triangle_area)
-            triangle_area_val = float(triangle_area) if valid else 0.0
-
-            target = 1.29903811
-            combined_score = (triangle_area_val / target) if valid else 0.0
-
-            return {
-                "validity": 1.0 if valid else 0.0,
-                "triangle_area": triangle_area_val,
-                "target_ratio": triangle_area_val / target if valid else 0.0,
-                "combined_score": combined_score,
-            }
-
-        except TimeoutError as e:
-            print(f"Stage 1 evaluation timed out: {e}")
-            return {"validity": 0.0, "combined_score": 0.0, "error": "Timeout"}
-        except Exception as e:
-            print(f"Stage 1 evaluation failed: {e}")
-            print(traceback.format_exc())
-            return {"validity": 0.0, "combined_score": 0.0, "error": str(e)}
-
-    except Exception as e:
-        print(f"Stage 1 evaluation failed completely: {e}")
-        print(traceback.format_exc())
-        return {"validity": 0.0, "combined_score": 0.0, "error": str(e)}
+    return evaluate(program_path)
 
 
 def evaluate_stage2(program_path):
