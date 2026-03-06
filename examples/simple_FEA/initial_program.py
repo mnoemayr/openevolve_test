@@ -3,48 +3,41 @@ import csv
 import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-INPUT_PATH = os.path.join(BASE_DIR, "input.csv")
+INPUT_PATH = os.path.join(BASE_DIR, "input1.csv")
 
 # EVOLVE-BLOCK-START
-"""Initial program for a triangle inside a unit circle (FEA variant)."""
+"""
+Initial program for a cantilver beam with two nodes.
 
+Only one degree of freedom for OpenEvolve:
+the x-coordinate of the second node (N2), and with this the beam's span length.
+"""
 
-def construct_geometry(
-    polygon_radius: float = 0.8,
-    num_polygon: int = 3,
-):
+SECOND_NODE_X = 300.0  # Initial x-coordinate of the second node (N2)
+
+def construct_geometry():
     """
-    Construct a regular polygon inscribed in a unit circle (radius 1).
-    polygon_radius for the polygon must be <= 1.
+    Construct a two-node cantilever:
+    - N1 at (0.0, 0.0, 0.0)
+    - N2 at (SECOND_NODE_X, 0.0, 0.0)
 
     Returns:
-        triangle_pts: List of (x, y, z) triangle vertices.
-        triangle_edges: List of triangle edges (start, end).
-        triangle_area: Area of the triangle.
+        pts: List of (x, y, z) node coordinates.
+        edges: List of member edges (start, end) for convenience.
+        span_length: The cantilever span, used as a scalar metric.
     """
-    if polygon_radius > 1.0:
-        polygon_radius = 1.0  # Clamp to unit circle
 
-    triangle_pts = []
-    for i in range(num_polygon):
-        angle = 2 * math.pi * i / num_polygon
-        coord_x = polygon_radius * math.cos(angle)
-        coord_y = polygon_radius * math.sin(angle)
-        triangle_pts.append((coord_x, coord_y, 0.0))
+    n1 = (0.0, 0.0, 0.0)
+    n2 = (float(SECOND_NODE_X), 0.0, 0.0)
 
-    triangle_edges = []
-    for j in range(num_polygon):
-        next_j = (j + 1) % num_polygon
-        triangle_edges.append((triangle_pts[j], triangle_pts[next_j]))
+    pts = [n1, n2]
+    edges = [(n1, n2)]
+    span_length = abs(n2[0] - n1[0])
 
-    # Area of regular n-gon inscribed in circle of radius r: (n/2) * r^2 * sin(2*pi/n)
-    triangle_area = (num_polygon / 2) * polygon_radius**2 * math.sin(2 * math.pi / num_polygon)
-
-    return triangle_pts, triangle_edges, triangle_area
+    return pts, edges, span_length
 
 
 # EVOLVE-BLOCK-END
-
 
 def run_geometry():
     """

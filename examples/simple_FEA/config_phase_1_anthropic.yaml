@@ -1,4 +1,4 @@
-# Configuration for simple FEA
+# Configuration for simple FEA cantilever optimization
 max_iterations: 100 # Increased iterations
 checkpoint_interval: 1 #MN: was 10
 log_level: "INFO"
@@ -18,19 +18,37 @@ llm:
 # Prompt configuration --> update prompts for FEA task
 prompt:
   system_message: |
-    You are an expert mathematician specializing in extremal geometry and analytic constructions.
-    Your task is to improve a constructor function that directly produces the maximum-area triangle inscribed in a unit circle.
+    You are an expert in structural mechanics and finite element analysis using the PyNiteFEA library.
+    Your task is to improve a simple cantilever beam geometry for FEA, where the evaluator minimizes
+    the maximum nodal displacement under a fixed vertical tip load.
 
-    Key geometric insights:
-    - For a fixed circumradius, triangle area is maximized when all sides are equal
-    - Equal angular spacing of vertices on the circle maximizes pairwise chord lengths
-    - Any deviation from 120° central angles decreases the triangle’s area
-    - Rotational symmetry implies a family of equivalent optima rather than a unique solution
-    - This extremal configuration admits a closed-form analytic construction
-    
-    Focus:
-    Construct the triangle explicitly by specifying vertex angles or coordinates on the unit circle.
-    Avoid iterative solvers, heuristics, or gradient-based methods; rely on geometric structure and exact formulas.
+    Code structure:
+    - The evolvable code lives inside an EVOLVE-BLOCK in `initial_program.py`.
+    - That file defines a function `construct_geometry()` which:
+        - Creates two nodes: N1 at (0.0, 0.0, 0.0) and N2 at (SECOND_NODE_X, 0.0, 0.0).
+        - Writes these coordinates to `input.csv` (or `nodes.csv`), which the evaluator uses to build
+          a PyNite `FEModel3D` cantilever.
+    - The evaluator:
+        - Builds a beam with A36 material and W-section properties, fixes N1, and applies a downward
+          vertical load at N2.
+        - Runs a linear FEA analysis and computes fitness as the negative of the maximum nodal
+          displacement magnitude (smaller displacement → higher fitness).
+
+    Critical constraint:
+    - There is exactly ONE degree of freedom for the evolutionary process:
+        - The x-coordinate of the second node, `SECOND_NODE_X`, which controls the span length.
+    - You MUST only change the numeric value of `SECOND_NODE_X` inside the EVOLVE-BLOCK.
+    - Do NOT change:
+        - Function names or signatures.
+        - The number of nodes (must remain exactly 2).
+        - The y or z coordinates of any node.
+        - Any CSV-writing, evaluator, or PyNite-related code outside the EVOLVE-BLOCK.
+
+    Objective:
+    - Propose values of `SECOND_NODE_X` that improve the evaluator’s fitness.
+    - Prefer physically realistic spans (positive, finite beam length).
+    - Avoid code that introduces new parameters, control flow, or complexity; focus solely on
+      setting `SECOND_NODE_X` to a good scalar value.
 
   num_top_programs: 3
   use_template_stochasticity: true

@@ -25,5 +25,6 @@ model.analyze_linear(log=False)
 uz = model.nodes['N2'].DZ['1.0D']
 rxn = model.nodes['N1'].RxnFZ['1.0D']
 
+print(model.nodes['N1'], model.nodes['N2'])
 print(f"Vertical displacement at N2: {uz:.6f} in")
 print(f"Reaction force at N1: {rxn:.2f} lb")

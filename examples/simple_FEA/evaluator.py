@@ -24,8 +24,8 @@ def _read_nodes_from_csv(program_path, filename="nodes.csv"):
     candidate_paths = [
         os.path.join(program_dir, filename),
         os.path.join(program_dir, "io", filename),
-        os.path.join(program_dir, "input.csv"),
-        os.path.join(program_dir, "io", "input.csv"),
+        os.path.join(program_dir, "input1.csv"),
+        os.path.join(program_dir, "io", "input1.csv"),
     ]
 
     csv_path = None
@@ -92,8 +92,8 @@ def extract_geometry(program_path):
        - A CSV file with node coordinates is loaded if present:
          * nodes.csv
          * io/nodes.csv
-         * input.csv
-         * io/input.csv
+         * input1.csv
+         * io/input1.csv
        - Elements, supports, and loads are then generated procedurally
          from these nodes:
            * Elements connect N1-N2, N2-N3, ..., forming a chain
@@ -139,14 +139,15 @@ def extract_geometry(program_path):
                     "name": f"M{i+1}",
                     "i": i_id,
                     "j": j_id,
-                    "material": "Steel",
-                    "section": "GenericSection",
+                    "material_name": "A36",
+                    "section_name": "Wsect",
                 }
             )
+        print("elements: ",elements)
 
         supports = []
         if node_ids:
-            # Fix the first node
+            # Fix the first node (cantilever root)
             supports.append( #UX = fixed, UY = fixed
                 {
                     "node": node_ids[0],
@@ -158,17 +159,6 @@ def extract_geometry(program_path):
                     "RZ": True,
                 }
             )
-            supports.append( #UY = fixed, UX = free
-                {
-                    "node": node_ids[1],
-                    "DX": True,
-                    "DY": True,
-                    "DZ": False,
-                    "RX": False,
-                    "RY": False,
-                    "RZ": False,
-                }
-            )
         print("supports: ",supports)
 
         loads = []
@@ -176,9 +166,9 @@ def extract_geometry(program_path):
             # Apply a vertical load at the last node
             loads.append(
                 {
-                    "node": node_ids[-1],
+                    "node": node_ids[1],
                     "direction": "FZ",
-                    "value": -100000,
+                    "value": 5.0,
                     "case": "D",
                 }
             )
@@ -200,7 +190,7 @@ def extract_geometry(program_path):
         raise AttributeError(
             "Program must define get_fea_geometry() or extract_geometry() "
             "returning (nodes, elements, supports, loads), "
-            "or provide a nodes.csv / input.csv file."
+            "or provide a nodes.csv / input1.csv file."
         )
 
     # Allow dict-style return for convenience
@@ -243,27 +233,19 @@ def build_pynite_model(nodes, elements, supports=None, loads=None):
     # (Users can choose to call add_material/add_section in their geometry function instead.)
     if hasattr(model, "add_material"):
         # Simple generic material
-        E = 29000.0
-        G = 11200.0
-        nu = 0.3
-        rho = 2.836e-4
-        model.add_material("Steel", E, G, nu, rho)
+        model.add_material("A36", E=29_000_000.0, G=11_200_000.0, nu=0.3, rho=0.283)
 
     if hasattr(model, "add_section"):
-        # Simple generic section
-        A = 20.0
-        Iy = 100.0
-        Iz = 150.0
-        J = 250.0
-        model.add_section("GenericSection", A, Iy, Iz, J)
+        # Match FEA_tut: W-section properties
+        model.add_section("Wsect", A=10.0, Iy=100.0, Iz=200.0, J=5.0)
 
     # Add elements (members)
     for elem in elements:
         name = str(elem.get("name"))
         i_node = str(elem.get("i"))
         j_node = str(elem.get("j"))
-        material = str(elem.get("material", "Steel"))
-        section = str(elem.get("section", "GenericSection"))
+        material = str(elem.get("material_name", "A36")) #material_name or material
+        section = str(elem.get("section_name", "Wsect")) #section_name or section
         model.add_member(name, i_node, j_node, material, section)
 
     # Supports
@@ -284,13 +266,21 @@ def build_pynite_model(nodes, elements, supports=None, loads=None):
     loads = loads or []
     for load in loads:
         node = str(load.get("node"))
-        direction = str(load.get("direction", "FY"))
+        direction = str(load.get("direction", "FZ"))
         value = float(load.get("value", 0.0))
         case = str(load.get("case", "D"))
         if not node:
             continue
         if hasattr(model, "add_node_load"):
             model.add_node_load(node, direction, value, case)
+
+    # Match FEA_tut: define a basic load combination using case 'D'
+    if hasattr(model, "add_load_combo"):
+        try:
+            model.add_load_combo("1.0D", {"D": 1.0})
+        except TypeError:
+            # Fallback for older signatures
+            pass
 
     return model
 
@@ -313,7 +303,14 @@ def evaluate(program_path):
         model = build_pynite_model(nodes, elements, supports, loads)
 
         # Run the analysis
-        model.analyze()
+        # Prefer the FEA_tut-style linear analysis if available
+        if hasattr(model, "analyze_linear"):
+            try:
+                model.analyze_linear(log=False)
+            except TypeError:
+                model.analyze_linear()
+        else:
+            model.analyze()
 
         # Collect maximum absolute displacement over all nodes and load combos
         max_disp = 0.0
@@ -360,7 +357,6 @@ def evaluate(program_path):
             "combined_score": -1e9,
             "error": str(e),
         }
-
 
 def evaluate_stage1(program_path):
     """
